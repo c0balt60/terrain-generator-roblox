@@ -1,74 +1,190 @@
 --!strict
 --[[
-	Biome table. Each biome sits at a point in (temperature, moisture) space,
-	both in [-1, 1]; a column's weights come from its distance to every point,
-	so neighbouring biomes blend their height parameters instead of stepping.
+	Biome table, laid out the way Minecraft's multi-noise biomes are.
+
+	Biomes never set the terrain's height: the sampler builds the land first,
+	then looks the biome up from three things:
+
+	- Temperature band (frozen, cold, temperate, warm, hot) and humidity band
+	  (arid, dry, normal, humid, wet), from two large-scale climate noises. The
+	  bands are wide, so a climate zone covers a region and hot zones never touch
+	  frozen ones: the noise has to pass through the bands in between.
+	- Terrain band, from the elevation: wet low ground (swamps), lowland, mountain
+	  slopes and peaks. Lowland biomes ride up the lower flanks of a range, so
+	  mountains lift them rather than replace them.
+
+	Each terrain band has its own [temperature][humidity] table. Near a band edge
+	the neighbouring bands blend, which only affects the small surface forms
+	(dunes, mesas, ...); materials come from the dominant biome.
+
+	Snow is not a biome property except for the dedicated snow biomes. Everywhere
+	else it falls above a snow line that drops in colder climates and never
+	reaches the lowland.
 
 	Materials are Enum.Material names, not enums, so this stays loadable in
 	Lune. The worker resolves them through a palette.
 ]]
 
+-- Names of the per-biome surface forms implemented in Sampler.
+export type Shape = "meadow" | "ridges" | "knolls" | "forest" | "hummocks" | "mesas" | "dunes" | "crags"
+
 export type Biome = {
 	name: string,
-	temperature: number,
-	moisture: number,
 
-	-- Height parameters, blended by weight.
-	height: number, -- Offset above the continental base.
-	roughness: number, -- Amplitude of the detail noise.
-	mountains: number, -- 0..1 multiplier on the mountain layer.
-	snowLineOffset: number,
+	-- Surface parameters, blended by weight.
+	shape: Shape, -- Biome-specific surface form.
+	lowland: number, -- 0..1 pull toward the bank height (wetlands). Only meaningful low down.
 
 	-- Materials, taken from the dominant biome only.
 	surface: string,
+	patchHigh: string, -- Replaces surface where the patch noise is high.
+	patchLow: string, -- Replaces surface where the patch noise is low.
 	subsurface: string,
-	steep: string,
+	steep: string, -- Cliffs and steep slopes.
 	beach: string,
 	seabed: string,
 }
 
+-- Lookup tables, one per terrain band: rows are temperature bands (coldest
+-- first), columns humidity bands (driest first). Entries are indices into `list`.
+export type Table = { { number } }
+
 -- stylua: ignore
-local BIOMES: { Biome } = {
+local LIST: { Biome } = {
 	{
-		name = "Tundra", temperature = -0.75, moisture = 0.0,
-		height = 6, roughness = 10, mountains = 0.8, snowLineOffset = -160,
-		surface = "Snow", subsurface = "Ground", steep = "Slate", beach = "Ground", seabed = "Ground",
+		-- The dedicated snow biome: the only lowland that is white.
+		name = "Snowy Plains", shape = "knolls", lowland = 0,
+		surface = "Snow", patchHigh = "Glacier", patchLow = "Snow",
+		subsurface = "Ground", steep = "Slate", beach = "Pebble", seabed = "Pebble",
 	},
 	{
-		name = "Taiga", temperature = -0.35, moisture = 0.45,
-		height = 10, roughness = 14, mountains = 0.9, snowLineOffset = -60,
-		surface = "Grass", subsurface = "Ground", steep = "Slate", beach = "Ground", seabed = "Ground",
+		name = "Snowy Taiga", shape = "forest", lowland = 0,
+		surface = "Snow", patchHigh = "Snow", patchLow = "Ground",
+		subsurface = "Ground", steep = "Slate", beach = "Pebble", seabed = "Ground",
 	},
 	{
-		name = "Plains", temperature = 0.1, moisture = -0.15,
-		height = 4, roughness = 5, mountains = 0.45, snowLineOffset = 0,
-		surface = "Grass", subsurface = "Ground", steep = "Rock", beach = "Sand", seabed = "Sand",
+		name = "Taiga", shape = "forest", lowland = 0,
+		surface = "Grass", patchHigh = "LeafyGrass", patchLow = "Ground",
+		subsurface = "Ground", steep = "Slate", beach = "Pebble", seabed = "Ground",
 	},
 	{
-		name = "Forest", temperature = 0.15, moisture = 0.5,
-		height = 12, roughness = 16, mountains = 0.7, snowLineOffset = 0,
-		surface = "LeafyGrass", subsurface = "Ground", steep = "Rock", beach = "Sand", seabed = "Sand",
+		name = "Grasslands", shape = "meadow", lowland = 0,
+		surface = "Grass", patchHigh = "LeafyGrass", patchLow = "Grass",
+		subsurface = "Ground", steep = "Rock", beach = "Sand", seabed = "Sand",
 	},
 	{
-		name = "Swamp", temperature = 0.45, moisture = 0.9,
-		height = -1, roughness = 3, mountains = 0.1, snowLineOffset = 40,
-		surface = "Mud", subsurface = "Mud", steep = "Ground", beach = "Mud", seabed = "Mud",
+		name = "Forest", shape = "forest", lowland = 0,
+		surface = "LeafyGrass", patchHigh = "Grass", patchLow = "Mud",
+		subsurface = "Ground", steep = "Rock", beach = "Sand", seabed = "Sand",
 	},
 	{
-		name = "Savanna", temperature = 0.6, moisture = -0.25,
-		height = 6, roughness = 8, mountains = 0.4, snowLineOffset = 60,
-		surface = "Ground", subsurface = "Sandstone", steep = "Sandstone", beach = "Sand", seabed = "Sand",
+		name = "Swamp", shape = "hummocks", lowland = 0.9,
+		surface = "Mud", patchHigh = "LeafyGrass", patchLow = "Ground",
+		subsurface = "Mud", steep = "Ground", beach = "Mud", seabed = "Mud",
 	},
 	{
-		name = "Desert", temperature = 0.8, moisture = -0.75,
-		height = 8, roughness = 14, mountains = 0.5, snowLineOffset = 200,
-		surface = "Sand", subsurface = "Sandstone", steep = "Sandstone", beach = "Sand", seabed = "Sand",
+		name = "Savanna", shape = "mesas", lowland = 0,
+		surface = "Ground", patchHigh = "Grass", patchLow = "Sand",
+		subsurface = "Sandstone", steep = "Sandstone", beach = "Sand", seabed = "Sand",
+	},
+	{
+		name = "Desert", shape = "dunes", lowland = 0,
+		surface = "Sand", patchHigh = "Sandstone", patchLow = "Salt",
+		subsurface = "Sandstone", steep = "Sandstone", beach = "Sand", seabed = "Sand",
+	},
+	{
+		-- Grassy upper flanks of a range, with bare rock showing through.
+		name = "Meadow", shape = "ridges", lowland = 0,
+		surface = "Grass", patchHigh = "LeafyGrass", patchLow = "Rock",
+		subsurface = "Ground", steep = "Rock", beach = "Pebble", seabed = "Pebble",
+	},
+	{
+		name = "Snowy Slopes", shape = "ridges", lowland = 0,
+		surface = "Snow", patchHigh = "Glacier", patchLow = "Rock",
+		subsurface = "Rock", steep = "Rock", beach = "Pebble", seabed = "Pebble",
+	},
+	{
+		-- Hot, dry mountains: slopes and peaks alike.
+		name = "Badlands", shape = "mesas", lowland = 0,
+		surface = "Sandstone", patchHigh = "Limestone", patchLow = "Ground",
+		subsurface = "Sandstone", steep = "Rock", beach = "Sand", seabed = "Sand",
+	},
+	{
+		name = "Peaks", shape = "crags", lowland = 0,
+		surface = "Rock", patchHigh = "Slate", patchLow = "Pebble",
+		subsurface = "Rock", steep = "Slate", beach = "Pebble", seabed = "Pebble",
 	},
 }
 
-table.freeze(BIOMES)
-for _, biome in BIOMES do
+-- stylua: ignore
+local LAYOUT: { [string]: { { string } } } = {
+	wetland = {
+		{ "Snowy Plains", "Snowy Plains", "Snowy Plains", "Snowy Taiga", "Snowy Taiga" },
+		{ "Grasslands",   "Grasslands",   "Grasslands",   "Taiga",       "Taiga" },
+		{ "Grasslands",   "Grasslands",   "Grasslands",   "Swamp",       "Swamp" },
+		{ "Savanna",      "Savanna",      "Grasslands",   "Swamp",       "Swamp" },
+		{ "Desert",       "Desert",       "Desert",       "Savanna",     "Savanna" },
+	},
+	lowland = {
+		{ "Snowy Plains", "Snowy Plains", "Snowy Plains", "Snowy Taiga", "Snowy Taiga" },
+		{ "Grasslands",   "Grasslands",   "Grasslands",   "Taiga",       "Taiga" },
+		{ "Grasslands",   "Grasslands",   "Grasslands",   "Forest",      "Forest" },
+		{ "Savanna",      "Savanna",      "Grasslands",   "Forest",      "Forest" },
+		{ "Desert",       "Desert",       "Desert",       "Savanna",     "Savanna" },
+	},
+	slopes = {
+		{ "Snowy Slopes", "Snowy Slopes", "Snowy Slopes", "Snowy Slopes", "Snowy Slopes" },
+		{ "Meadow",       "Meadow",       "Meadow",       "Meadow",       "Meadow" },
+		{ "Meadow",       "Meadow",       "Meadow",       "Meadow",       "Meadow" },
+		{ "Meadow",       "Meadow",       "Meadow",       "Meadow",       "Meadow" },
+		{ "Badlands",     "Badlands",     "Badlands",     "Badlands",     "Badlands" },
+	},
+	peaks = {
+		{ "Peaks",        "Peaks",        "Peaks",        "Peaks",        "Peaks" },
+		{ "Peaks",        "Peaks",        "Peaks",        "Peaks",        "Peaks" },
+		{ "Peaks",        "Peaks",        "Peaks",        "Peaks",        "Peaks" },
+		{ "Peaks",        "Peaks",        "Peaks",        "Peaks",        "Peaks" },
+		{ "Badlands",     "Badlands",     "Badlands",     "Badlands",     "Badlands" },
+	},
+}
+
+local indexOf: { [string]: number } = {}
+for i, biome in LIST do
+	indexOf[biome.name] = i
 	table.freeze(biome)
 end
+table.freeze(LIST)
 
-return BIOMES
+local function resolve(layout: { { string } }): Table
+	local out = table.create(#layout)
+	for t, row in layout do
+		local resolved = table.create(#row)
+		for h, name in row do
+			resolved[h] = assert(indexOf[name], `unknown biome {name}`)
+		end
+		out[t] = table.freeze(resolved)
+	end
+	return table.freeze(out)
+end
+
+return table.freeze({
+	list = LIST,
+
+	-- Band edges on the climate values the sampler computes (noise scaled to
+	-- roughly [-1, 1]). They split the world into about 15/20/38/14/13% by
+	-- temperature and 15/22/30/18/15% by humidity.
+	TEMPERATURE_EDGES = table.freeze({ -0.58, -0.22, 0.36, 0.65 }),
+	HUMIDITY_EDGES = table.freeze({ -0.55, -0.15, 0.32, 0.62 }),
+
+	-- Terrain bands, lowest first; the sampler supplies the elevation edges.
+	tables = table.freeze({
+		resolve(LAYOUT.wetland),
+		resolve(LAYOUT.lowland),
+		resolve(LAYOUT.slopes),
+		resolve(LAYOUT.peaks),
+	}),
+
+	index = function(name: string): number
+		return assert(indexOf[name], `unknown biome {name}`)
+	end,
+})

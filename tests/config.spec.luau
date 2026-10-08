@@ -20,6 +20,12 @@ return function(test)
 		end
 	end)
 
+	test("every field belongs to a listed group", function()
+		for _, field in Config.FIELDS do
+			expect.truthy(table.find(Config.GROUPS, field.group), field.key)
+		end
+	end)
+
 	test("non-table input yields defaults", function()
 		local clean = Config.sanitize("nope")
 		expect.equal(clean.seed, Config.defaults().seed, "seed")

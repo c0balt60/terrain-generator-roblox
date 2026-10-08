@@ -23,11 +23,26 @@ export type Config = {
 	landHeight: number,
 	detailScale: number,
 	detailStrength: number,
-	mountainScale: number,
+	hillHeight: number,
+	hillScale: number,
+	reliefScale: number,
+	erosion: number,
+
+	rangeScale: number,
+	rangeWidth: number,
+	mountainBase: number,
 	mountainHeight: number,
+	mountainScale: number,
+
+	beachHeight: number,
+	beachWidth: number,
+	cliffAmount: number,
+	cliffHeight: number,
 
 	biomeScale: number,
 	biomeBlend: number,
+	slopeElevation: number,
+	peakElevation: number,
 	temperatureBias: number,
 	moistureBias: number,
 
@@ -36,7 +51,6 @@ export type Config = {
 	riverDepth: number,
 	riverMaxElevation: number,
 
-	beachHeight: number,
 	snowLine: number,
 	steepSlope: number,
 }
@@ -88,7 +102,7 @@ local function choice(group: string, key: string, label: string, default: string
 	return { kind = "choice", group = group, key = key, label = label, default = default, options = options }
 end
 
-local GROUPS = { "World", "Shape", "Biomes", "Water", "Materials" }
+local GROUPS = { "World", "Shape", "Mountains", "Coast", "Biomes", "Water", "Materials" }
 
 -- stylua: ignore
 local FIELDS: { Field } = {
@@ -102,14 +116,29 @@ local FIELDS: { Field } = {
 	number("Shape", "continentScale", "Continent scale", 2400, 300, 12000, 50),
 	number("Shape", "coastBias", "Land bias", 0.1, -0.6, 0.6, 0.01),
 	number("Shape", "oceanDepth", "Ocean depth", 70, 8, 120, 1),
-	number("Shape", "landHeight", "Land height", 24, 0, 120, 1),
+	number("Shape", "landHeight", "Land height", 10, 0, 120, 1),
 	number("Shape", "detailScale", "Detail scale", 220, 32, 1000, 1),
 	number("Shape", "detailStrength", "Detail strength", 1, 0, 3, 0.05),
-	number("Shape", "mountainScale", "Mountain scale", 1100, 200, 5000, 10),
-	number("Shape", "mountainHeight", "Mountain height", 240, 0, 360, 1),
+	number("Shape", "hillHeight", "Hill height", 40, 0, 160, 1),
+	number("Shape", "hillScale", "Hill scale", 800, 100, 4000, 10),
+	number("Shape", "reliefScale", "Hills vs plains scale", 2600, 400, 12000, 50),
+	number("Shape", "erosion", "Erosion", 0.15, 0, 1, 0.01),
 
-	number("Biomes", "biomeScale", "Climate scale", 1800, 200, 10000, 10),
-	number("Biomes", "biomeBlend", "Blend width", 0.18, 0.02, 0.5, 0.01),
+	number("Mountains", "rangeScale", "Range spacing", 3600, 600, 12000, 50),
+	number("Mountains", "rangeWidth", "Range width (studs)", 1400, 200, 4000, 10),
+	number("Mountains", "mountainBase", "Range uplift", 130, 0, 240, 1),
+	number("Mountains", "mountainHeight", "Peak height", 320, 0, 480, 1),
+	number("Mountains", "mountainScale", "Peak scale", 1300, 200, 5000, 10),
+
+	number("Coast", "beachHeight", "Beach height", 5, 0, 16, 1),
+	number("Coast", "beachWidth", "Beach width", 0.05, 0.01, 0.2, 0.005),
+	number("Coast", "cliffAmount", "Cliff amount", 0.3, 0, 1, 0.01),
+	number("Coast", "cliffHeight", "Cliff height", 28, 0, 120, 1),
+
+	number("Biomes", "biomeScale", "Climate scale", 4000, 500, 16000, 10),
+	number("Biomes", "biomeBlend", "Blend width", 0.08, 0.02, 0.15, 0.01),
+	number("Biomes", "slopeElevation", "Slopes start", 150, 60, 300, 1),
+	number("Biomes", "peakElevation", "Peaks start", 240, 120, 480, 1),
 	number("Biomes", "temperatureBias", "Temperature bias", 0, -0.6, 0.6, 0.01),
 	number("Biomes", "moistureBias", "Moisture bias", 0, -0.6, 0.6, 0.01),
 
@@ -118,8 +147,7 @@ local FIELDS: { Field } = {
 	number("Water", "riverDepth", "River depth", 8, 0, 32, 1),
 	number("Water", "riverMaxElevation", "River max elevation", 70, 0, 240, 1),
 
-	number("Materials", "beachHeight", "Beach height", 5, 0, 24, 1),
-	number("Materials", "snowLine", "Snow line", 190, 40, 480, 1),
+	number("Materials", "snowLine", "Snow line (temperate)", 290, 120, 500, 1),
 	number("Materials", "steepSlope", "Rock slope", 1.0, 0.2, 3, 0.05),
 }
 

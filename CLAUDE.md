@@ -31,7 +31,7 @@ only after a Studio run.
 
 | Path | What |
 |---|---|
-| `src/shared/Generation/` | Pure core: `Noise` (seeded simplex), `Sampler` (column height/biome/river), `ChunkBuilder` (voxel channels), `Config`, `Biomes`, `ChunkGrid` |
+| `src/shared/Generation/` | Pure core: `Noise` (seeded simplex, eroded fractals), `Sampler` (fills a `Column`: terrain first — coast, eroded hills, mountain ranges — then Minecraft-style biome tables picked by temperature, humidity and terrain band, rivers), `ChunkBuilder` (voxel channels), `Config`, `Biomes`, `ChunkGrid` |
 | `src/worker/Worker.server.luau` | Actor worker. Builds in parallel, then `task.synchronize()`, epoch check, write |
 | `src/server/Terrain/` | `WorkerPool`, `ChunkManager` (Stream / Pregenerate), `Spawning`, `DebugBridge` |
 | `src/client/DebugPanel.client.luau` | Iris tuning panel (F4); Studio or place owner only |
