@@ -1,0 +1,33 @@
+name = "c0balt60/terrain_generator"
+version = "0.1.0"
+authors = ["c0balt60"]
+license = "MIT"
+private = true
+
+[target]
+environment = "roblox"
+
+[indices]
+default = "https://github.com/pesde-pkg/index"
+
+[wally_indices]
+default = "https://github.com/UpliftGames/wally-index"
+
+[dependencies]
+Iris = { wally = "sirmallard/iris", version = "^2.5.1" }
+
+[scripts]
+roblox_sync_config_generator = ".pesde/scripts/roblox_sync_config_generator.luau"
+sourcemap_generator = ".pesde/scripts/sourcemap_generator.luau"
+prepare = ".lune/prepare"
+sync = ".lune/sync"
+build = ".lune/build"
+test = ".lune/test"
+verify = ".lune/verify"
+
+[dev_dependencies]
+scripts = { name = "pesde/scripts_rojo", version = "^0.2.0", target = "lune" }
+
+[engines]
+pesde = "^0.7.0"
+lune = "^0.10.4"

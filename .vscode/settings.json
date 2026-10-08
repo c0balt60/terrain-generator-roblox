@@ -1,0 +1,8 @@
+{
+    "luau-lsp.sourcemap.rojoProjectFile": "default.project.json",
+    "luau-lsp.studioPlugin.enabled": true,
+    "luau-lsp.fflags.enableNewSolver": true,
+    "luau-lsp.completion.imports.useConst": false,
+    "luau-lsp.require.mode": "relativeToFile",
+    "stylua.targetReleaseVersion": "latest"
+}

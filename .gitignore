@@ -1,0 +1,26 @@
+# Generated
+/sourcemap.json
+/out
+/build
+/.typedefs
+
+# Artifacts
+/*.rbxl
+/*.rbxlx
+/*.rbxm
+/*.rbxmx
+/*.rbxl.lock
+
+# Pesde
+.pesde/*
+!.pesde/scripts/
+luau_packages/
+lune_packages/
+roblox_packages/
+roblox_server_packages/
+
+# Env
+.env
+
+# Misc
+.DS_Store

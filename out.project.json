@@ -1,0 +1,40 @@
+{
+  "name": "terrain-generator",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Packages": {
+        "$path": "roblox_packages"
+      },
+      "Shared": {
+        "$path": "out/shared"
+      }
+    },
+    "ServerScriptService": {
+      "$path": "out/server"
+    },
+    "ServerStorage": {
+      "TerrainWorker": {
+        "$className": "Actor",
+        "Worker": {
+          "$path": "out/worker/Worker.server.luau"
+        }
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "out/client"
+      }
+    },
+    "Players": {
+      "$properties": {
+        "CharacterAutoLoads": false
+      }
+    },
+    "Lighting": {
+      "Atmosphere": {
+        "$className": "Atmosphere"
+      }
+    }
+  }
+}

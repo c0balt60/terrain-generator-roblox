@@ -1,0 +1,16 @@
+{
+  "aliases": {
+    "packages": "roblox_packages",
+    "shared": "src/shared",
+    "generation": "src/shared/Generation",
+    "server": "src/server",
+    "client": "src/client"
+  },
+  "languageMode": "strict",
+  "lint": {
+    "*": true
+  },
+  "lintErrors": false,
+  "typeErrors": true,
+  "globals": []
+}

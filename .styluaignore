@@ -1,0 +1,5 @@
+.pesde/**
+*_packages/**
+out/**
+build/**
+.typedefs/**

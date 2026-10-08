@@ -1,0 +1,23 @@
+{
+  "generator": "retain_lines",
+  "rules": [
+    {
+      "rule": "convert_require",
+      "current": {
+        "name": "luau",
+        "use_luau_configuration": true
+      },
+      "target": {
+        "name": "roblox",
+        "rojo_sourcemap": "../sourcemap.json",
+        "indexing_style": "property"
+      }
+    },
+    {
+      "rule": "inject_global_value",
+      "identifier": "__BUILD__",
+      "value": "dev"
+    },
+    "compute_expression"
+  ]
+}
