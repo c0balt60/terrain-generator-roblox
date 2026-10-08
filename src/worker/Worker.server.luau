@@ -11,7 +11,9 @@
 
 local ServerStorage = game:GetService("ServerStorage")
 
+local Assets = require("@generation/Assets")
 local ChunkBuilder = require("@generation/ChunkBuilder")
+local ChunkGrid = require("@generation/ChunkGrid")
 local Config = require("@generation/Config")
 local Constants = require("@generation/Constants")
 local Sampler = require("@generation/Sampler")
@@ -32,6 +34,8 @@ export type Job = {
 local runtime = ServerStorage:WaitForChild("TerrainRuntime")
 local done = runtime:WaitForChild("ChunkDone") :: BindableEvent
 local terrain = workspace.Terrain
+local templates = ServerStorage:WaitForChild("AssetTemplates")
+local assetRoot = workspace:WaitForChild("TerrainAssets")
 
 local palette: ChunkBuilder.Palette = {}
 for _, material in Enum.Material:GetEnumItems() do
@@ -54,6 +58,7 @@ actor:BindToMessageParallel("Build", function(job: Job)
 
 	local buildStart = os.clock()
 	local chunk = ChunkBuilder.build(current, job.cx, job.cz, palette)
+	local placements = Assets.place(current, job.cx, job.cz)
 	local buildTime = os.clock() - buildStart
 
 	task.synchronize()
@@ -71,6 +76,23 @@ actor:BindToMessageParallel("Build", function(job: Job)
 		SolidOccupancy = chunk.occupancy,
 		LiquidOccupancy = chunk.liquid,
 	})
+
+	if #placements > 0 then
+		local folder = Instance.new("Folder")
+		folder.Name = ChunkGrid.key(job.cx, job.cz)
+		for _, placement in placements do
+			local template = templates:FindFirstChild(placement.name) :: Model?
+			if template == nil then
+				continue -- AssetTemplates.ensure already warned about it.
+			end
+			local model = template:Clone()
+			model:ScaleTo(placement.scale)
+			model:PivotTo(CFrame.new(placement.x, placement.y, placement.z) * CFrame.Angles(0, placement.yaw, 0))
+			model:SetAttribute("Kind", placement.kind)
+			model.Parent = folder
+		end
+		folder.Parent = assetRoot
+	end
 
 	done:Fire(job.id, true, buildTime, os.clock() - writeStart)
 end)

@@ -43,6 +43,10 @@ export type Biome = {
 	steep: string, -- Cliffs and steep slopes.
 	beach: string,
 	seabed: string,
+
+	-- Assets, also from the dominant biome.
+	treeDensity: number, -- 0..1 fraction of Config.treeDensity.
+	trees: { string }, -- Tree species (template names), picked uniformly.
 }
 
 -- Lookup tables, one per terrain band: rows are temperature bands (coldest
@@ -56,63 +60,75 @@ local LIST: { Biome } = {
 		name = "Snowy Plains", shape = "knolls", lowland = 0,
 		surface = "Snow", patchHigh = "Glacier", patchLow = "Snow",
 		subsurface = "Ground", steep = "Slate", beach = "Pebble", seabed = "Pebble",
+		treeDensity = 0.008, trees = { "SnowySpruce" },
 	},
 	{
 		name = "Snowy Taiga", shape = "forest", lowland = 0,
 		surface = "Snow", patchHigh = "Snow", patchLow = "Ground",
 		subsurface = "Ground", steep = "Slate", beach = "Pebble", seabed = "Ground",
+		treeDensity = 1, trees = { "SnowySpruce" },
 	},
 	{
 		name = "Taiga", shape = "forest", lowland = 0,
 		surface = "Grass", patchHigh = "LeafyGrass", patchLow = "Ground",
 		subsurface = "Ground", steep = "Slate", beach = "Pebble", seabed = "Ground",
+		treeDensity = 1, trees = { "Spruce" },
 	},
 	{
 		name = "Grasslands", shape = "meadow", lowland = 0,
 		surface = "Grass", patchHigh = "LeafyGrass", patchLow = "Grass",
 		subsurface = "Ground", steep = "Rock", beach = "Sand", seabed = "Sand",
+		treeDensity = 0.02, trees = { "Oak", "Birch" },
 	},
 	{
 		name = "Forest", shape = "forest", lowland = 0,
 		surface = "LeafyGrass", patchHigh = "Grass", patchLow = "Mud",
 		subsurface = "Ground", steep = "Rock", beach = "Sand", seabed = "Sand",
+		treeDensity = 1, trees = { "Oak", "Birch" },
 	},
 	{
 		name = "Swamp", shape = "hummocks", lowland = 0.9,
 		surface = "Mud", patchHigh = "LeafyGrass", patchLow = "Ground",
 		subsurface = "Mud", steep = "Ground", beach = "Mud", seabed = "Mud",
+		treeDensity = 0.5, trees = { "SwampOak" },
 	},
 	{
 		name = "Savanna", shape = "mesas", lowland = 0,
 		surface = "Ground", patchHigh = "Grass", patchLow = "Sand",
 		subsurface = "Sandstone", steep = "Sandstone", beach = "Sand", seabed = "Sand",
+		treeDensity = 0.14, trees = { "Acacia" },
 	},
 	{
 		name = "Desert", shape = "dunes", lowland = 0,
 		surface = "Sand", patchHigh = "Sandstone", patchLow = "Salt",
 		subsurface = "Sandstone", steep = "Sandstone", beach = "Sand", seabed = "Sand",
+		treeDensity = 0, trees = {},
 	},
 	{
 		-- Grassy upper flanks of a range, with bare rock showing through.
 		name = "Meadow", shape = "ridges", lowland = 0,
 		surface = "Grass", patchHigh = "LeafyGrass", patchLow = "Rock",
 		subsurface = "Ground", steep = "Rock", beach = "Pebble", seabed = "Pebble",
+		treeDensity = 0.07, trees = { "Spruce" },
 	},
 	{
 		name = "Snowy Slopes", shape = "ridges", lowland = 0,
 		surface = "Snow", patchHigh = "Glacier", patchLow = "Rock",
 		subsurface = "Rock", steep = "Rock", beach = "Pebble", seabed = "Pebble",
+		treeDensity = 0.05, trees = { "SnowySpruce" },
 	},
 	{
 		-- Hot, dry mountains: slopes and peaks alike.
 		name = "Badlands", shape = "mesas", lowland = 0,
 		surface = "Sandstone", patchHigh = "Limestone", patchLow = "Ground",
 		subsurface = "Sandstone", steep = "Rock", beach = "Sand", seabed = "Sand",
+		treeDensity = 0, trees = {},
 	},
 	{
 		name = "Peaks", shape = "crags", lowland = 0,
 		surface = "Rock", patchHigh = "Slate", patchLow = "Pebble",
 		subsurface = "Rock", steep = "Slate", beach = "Pebble", seabed = "Pebble",
+		treeDensity = 0, trees = {},
 	},
 }
 

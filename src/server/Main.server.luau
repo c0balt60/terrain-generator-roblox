@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 
+local AssetTemplates = require("@server/Terrain/AssetTemplates")
 local ChunkManager = require("@server/Terrain/ChunkManager")
 local Config = require("@generation/Config")
 local DebugBridge = require("@server/Terrain/DebugBridge")
@@ -26,6 +27,9 @@ runtime.Parent = ServerStorage
 local state = Instance.new("Folder")
 state.Name = "TerrainState"
 state.Parent = ReplicatedStorage
+
+-- Before the pool: workers wait for the templates folder.
+AssetTemplates.ensure()
 
 local pool = WorkerPool.new(runtime, WORKER_COUNT)
 local manager = ChunkManager.new(pool, runtime, state)

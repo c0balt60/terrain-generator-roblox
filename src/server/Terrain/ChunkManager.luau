@@ -52,6 +52,7 @@ export type ChunkManager = {
 	_pool: WorkerPool.WorkerPool,
 	_runtime: Instance,
 	_state: Instance,
+	_assets: Instance,
 	_chunks: { [string]: Entry },
 	_pregenList: { ChunkGrid.Coord }?,
 	_pregenCursor: number,
@@ -80,6 +81,11 @@ local ChunkManager = {}
 ChunkManager.__index = ChunkManager
 
 function ChunkManager.new(pool: WorkerPool.WorkerPool, runtime: Instance, state: Instance): ChunkManager
+	-- Placed assets, one Folder per chunk named by its key. The workers fill it.
+	local assets = Instance.new("Folder")
+	assets.Name = "TerrainAssets"
+	assets.Parent = workspace
+
 	local changedEvent = Instance.new("BindableEvent")
 	local self = setmetatable({
 		epoch = 0,
@@ -89,6 +95,7 @@ function ChunkManager.new(pool: WorkerPool.WorkerPool, runtime: Instance, state:
 		_pool = pool,
 		_runtime = runtime,
 		_state = state,
+		_assets = assets,
 		_chunks = {},
 		_pregenList = nil,
 		_pregenCursor = 1,
@@ -105,6 +112,7 @@ function ChunkManager.setConfig(self: ChunkManager, config: Config.Config)
 	self._runtime:SetAttribute("Epoch", self.epoch)
 
 	workspace.Terrain:Clear()
+	self._assets:ClearAllChildren()
 	table.clear(self._chunks)
 
 	self.sampler = Sampler.new(config)
@@ -232,6 +240,10 @@ local function stepStream(self: ChunkManager, focuses: { Focus })
 		end
 		if not keep then
 			workspace.Terrain:FillRegion(chunkRegion(entry.cx, entry.cz), Constants.VOXEL_SIZE, Enum.Material.Air)
+			local folder = self._assets:FindFirstChild(key)
+			if folder then
+				folder:Destroy()
+			end
 			chunks[key] = nil
 			unloaded += 1
 			if unloaded >= MAX_UNLOADS_PER_STEP then

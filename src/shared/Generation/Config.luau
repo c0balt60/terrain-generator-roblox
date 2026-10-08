@@ -53,6 +53,9 @@ export type Config = {
 
 	snowLine: number,
 	steepSlope: number,
+
+	treeDensity: number,
+	oreDensity: number,
 }
 
 export type NumberField = {
@@ -102,7 +105,7 @@ local function choice(group: string, key: string, label: string, default: string
 	return { kind = "choice", group = group, key = key, label = label, default = default, options = options }
 end
 
-local GROUPS = { "World", "Shape", "Mountains", "Coast", "Biomes", "Water", "Materials" }
+local GROUPS = { "World", "Shape", "Mountains", "Coast", "Biomes", "Water", "Materials", "Assets" }
 
 -- stylua: ignore
 local FIELDS: { Field } = {
@@ -149,6 +152,10 @@ local FIELDS: { Field } = {
 
 	number("Materials", "snowLine", "Snow line (temperate)", 290, 120, 500, 1),
 	number("Materials", "steepSlope", "Rock slope", 1.0, 0.2, 3, 0.05),
+
+	-- Groves and clearings move trees around, so forests average about 8 per chunk at 12.
+	number("Assets", "treeDensity", "Tree density (forest)", 12, 0, 32, 0.5),
+	number("Assets", "oreDensity", "Ore nodes per chunk (mountains)", 1, 0, 4, 0.05),
 }
 
 local byKey: { [string]: Field } = {}
