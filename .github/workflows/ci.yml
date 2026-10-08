@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Never let two publishes race; a newer push supersedes a queued one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: CompeyDev/setup-rokit@v0.2.1
+        with:
+          cache: true
+
+      - name: Install pesde
+        run: |
+          curl -fsSL -o pesde.zip "https://github.com/pesde-pkg/pesde/releases/download/v0.7.4%2Bregistry.0.2.3/pesde-0.7.4-linux-x86_64.zip"
+          unzip -o pesde.zip -d pesde-bin && rm pesde.zip
+          chmod +x pesde-bin/pesde
+          ./pesde-bin/pesde self-install
+          echo "$HOME/.pesde/bin" >> "$GITHUB_PATH"
+
+      - run: pesde install
+
+      - name: Verify
+        run: pesde run verify
+
+      - name: Publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: pesde run publish
+        env:
+          RBXCLOUD_API_KEY: ${{ secrets.RBXCLOUD_API_KEY }}
+          UNIVERSE_ID: ${{ vars.UNIVERSE_ID }}
+          PLACE_ID: ${{ vars.PLACE_ID }}

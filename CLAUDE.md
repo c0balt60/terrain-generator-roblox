@@ -21,7 +21,10 @@ pesde run sync      # install, transpile, then watch + rojo serve out.project.js
 pesde run build     # build/terrain-generator.rbxl (add -- --prod for the prod darklua config)
 pesde run test      # headless Lune specs in tests/ (pass a filter: -- noise)
 pesde run verify    # sourcemap, darklua, selene, stylua --check, luau-lsp analyze, tests
+pesde run publish   # prod build + rbxcloud upload; env RBXCLOUD_API_KEY, UNIVERSE_ID, PLACE_ID (-- --saved = don't go live)
 ```
+
+CI (`.github/workflows/ci.yml`) runs `verify` on every push/PR and `publish` on `main` only after verify passes.
 
 `verify` only proves that the code builds, type-checks, and that the pure generator behaves.
 Terrain writes, Actors and the Iris panel run only in Studio, so say "verified" for those

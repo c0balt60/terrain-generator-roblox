@@ -24,6 +24,7 @@ sync = ".lune/sync"
 build = ".lune/build"
 test = ".lune/test"
 verify = ".lune/verify"
+publish = ".lune/publish"
 
 [dev_dependencies]
 scripts = { name = "pesde/scripts_rojo", version = "^0.2.0", target = "lune" }
