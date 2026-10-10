@@ -16,12 +16,19 @@ local Prng = require("./Prng")
 
 local F2 = 0.5 * (math.sqrt(3) - 1)
 local G2 = (3 - math.sqrt(3)) / 6
+local F3 = 1 / 3
+local G3 = 1 / 6
 
--- 12 gradient directions, x and y components.
+-- 12 gradient directions (the cube's edge midpoints). 2D noise uses the x and y components.
 local GRAD_X = { 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0 }
 local GRAD_Y = { 1, 1, -1, -1, 0, 0, 0, 0, 1, -1, 1, -1 }
+local GRAD_Z = { 0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1 }
+
+-- Brings the 3D sum back to [-1, 1]: the measured raw peak is about 0.013.
+local SIMPLEX3_SCALE = 76
 
 export type Noise2 = (x: number, y: number) -> number
+export type Noise3 = (x: number, y: number, z: number) -> number
 -- Noise value plus its partial derivatives with respect to x and y.
 export type Noise2D = (x: number, y: number) -> (number, number, number)
 
@@ -184,6 +191,80 @@ function Noise.simplex2d(seed: number, salt: number): Noise2D
 	end
 end
 
+--[[
+	Seeded 3D simplex noise in roughly [-1, 1]. Kernel radius^2 is 0.5 rather than
+	the 0.6 of the reference code, because 0.6 leaks across simplex borders and
+	leaves faint seams.
+]]
+function Noise.simplex3(seed: number, salt: number): Noise3
+	local perm, permGrad = permutation(seed, salt)
+
+	local function corner(g: number, x: number, y: number, z: number): number
+		local t = 0.5 - x * x - y * y - z * z
+		if t <= 0 then
+			return 0
+		end
+		t *= t
+		return t * t * (GRAD_X[g] * x + GRAD_Y[g] * y + GRAD_Z[g] * z)
+	end
+
+	return function(xin: number, yin: number, zin: number): number
+		local s = (xin + yin + zin) * F3
+		local i = math.floor(xin + s)
+		local j = math.floor(yin + s)
+		local k = math.floor(zin + s)
+		local t = (i + j + k) * G3
+		local x0 = xin - (i - t)
+		local y0 = yin - (j - t)
+		local z0 = zin - (k - t)
+
+		-- Which of the six tetrahedra in the skewed cube holds the point.
+		local i1, j1, k1, i2, j2, k2
+		if x0 >= y0 then
+			if y0 >= z0 then
+				i1, j1, k1, i2, j2, k2 = 1, 0, 0, 1, 1, 0
+			elseif x0 >= z0 then
+				i1, j1, k1, i2, j2, k2 = 1, 0, 0, 1, 0, 1
+			else
+				i1, j1, k1, i2, j2, k2 = 0, 0, 1, 1, 0, 1
+			end
+		else
+			if y0 < z0 then
+				i1, j1, k1, i2, j2, k2 = 0, 0, 1, 0, 1, 1
+			elseif x0 < z0 then
+				i1, j1, k1, i2, j2, k2 = 0, 1, 0, 0, 1, 1
+			else
+				i1, j1, k1, i2, j2, k2 = 0, 1, 0, 1, 1, 0
+			end
+		end
+
+		local ii = i % 256
+		local jj = j % 256
+		local kk = k % 256
+
+		local n = corner(permGrad[ii + perm[jj + perm[kk + 1] + 1] + 1], x0, y0, z0)
+		n += corner(
+			permGrad[ii + i1 + perm[jj + j1 + perm[kk + k1 + 1] + 1] + 1],
+			x0 - i1 + G3,
+			y0 - j1 + G3,
+			z0 - k1 + G3
+		)
+		n += corner(
+			permGrad[ii + i2 + perm[jj + j2 + perm[kk + k2 + 1] + 1] + 1],
+			x0 - i2 + 2 * G3,
+			y0 - j2 + 2 * G3,
+			z0 - k2 + 2 * G3
+		)
+		n += corner(
+			permGrad[ii + 1 + perm[jj + 1 + perm[kk + 2] + 1] + 1],
+			x0 - 1 + 3 * G3,
+			y0 - 1 + 3 * G3,
+			z0 - 1 + 3 * G3
+		)
+		return SIMPLEX3_SCALE * n
+	end
+end
+
 -- Fractal Brownian motion, normalised back to roughly [-1, 1].
 function Noise.fbm(noise: Noise2, x: number, y: number, octaves: number): number
 	local sum = 0
@@ -192,6 +273,21 @@ function Noise.fbm(noise: Noise2, x: number, y: number, octaves: number): number
 	local total = 0
 	for _ = 1, octaves do
 		sum += noise(x * frequency, y * frequency) * amplitude
+		total += amplitude
+		amplitude *= 0.5
+		frequency *= 2
+	end
+	return sum / total
+end
+
+-- 3D fbm, normalised back to roughly [-1, 1].
+function Noise.fbm3(noise: Noise3, x: number, y: number, z: number, octaves: number): number
+	local sum = 0
+	local amplitude = 1
+	local frequency = 1
+	local total = 0
+	for _ = 1, octaves do
+		sum += noise(x * frequency, y * frequency, z * frequency) * amplitude
 		total += amplitude
 		amplitude *= 0.5
 		frequency *= 2

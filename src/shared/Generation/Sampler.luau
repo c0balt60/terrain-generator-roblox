@@ -20,6 +20,14 @@
 	6. Rivers: thin bands where low-frequency noise crosses zero are carved
 	   down below sea level, fading out as the land rises.
 
+	7. 3D (optional): `occupancy` turns the column into per-voxel solidity.
+	   Overhangs warp the surface with 3D noise on mountains and steep slopes.
+	   Spaghetti tunnels run in a band under the surface and swell into
+	   chambers in places. Because the band hugs the terrain, tunnels keep
+	   crossing the surface, so most of the network has an entrance and every
+	   chamber hangs off a tunnel. Neither comes near water: caves stay dry
+	   because carving is masked off by shores, rivers and low ground.
+
 	The returned height is continuous, so occupancy can be derived from it
 	directly and the result is smooth terrain rather than stair steps.
 ]]
@@ -33,6 +41,7 @@ local fbm = Noise.fbm
 local ridged = Noise.ridged
 local erodedFbm = Noise.erodedFbm
 local erodedRidged = Noise.erodedRidged
+local fbm3 = Noise.fbm3
 
 -- Salts keep each layer's permutation independent for the same world seed.
 local SALT_CONTINENT = 1
@@ -50,6 +59,10 @@ local SALT_HILLS = 12
 local SALT_RELIEF = 13
 local SALT_SHAPE = 14
 local SALT_SHAPE_ALT = 15
+local SALT_CHAMBER = 16
+local SALT_TUNNEL_A = 17
+local SALT_TUNNEL_B = 18
+local SALT_OVERHANG = 19
 
 local MIN_HEIGHT = Constants.WORLD_BOTTOM + 8
 local MAX_HEIGHT = Constants.WORLD_TOP - 8
@@ -85,6 +98,32 @@ local SPINE_WIDTH = 0.45
 -- How far the detail noise shifts the elevation used to pick biomes, so band
 -- edges wander instead of tracing contour lines.
 local ELEVATION_JITTER = 20
+
+local VOXEL = Constants.VOXEL_SIZE
+-- Mean gradient of simplex3 per noise unit, measured. Dividing a noise value by
+-- it gives an approximate distance in noise units to where it crosses zero.
+local NOISE3_SLOPE = 2.8
+-- Chambers only swell this far below the surface, so cave mouths stay tunnel
+-- sized instead of opening pits.
+local CHAMBER_TOP, CHAMBER_FULL = 8, 24
+-- Below the cave band, tunnels narrow by this many studs per stud of depth.
+local BAND_TAPER = 0.5
+-- Caves get roomier going down. At the bottom of the band, tunnels are this
+-- many times wider, chambers this many times bigger, and the chamber edge has
+-- dropped this far (so more of the tunnel swells).
+local DEEP_TUNNEL, DEEP_CHAMBER, DEEP_EDGE = 2, 1.5, 0.15
+-- Caves fade in over this band of surface height above sea level. Lower
+-- columns sit next to the sea, rivers or wetland pools.
+local CAVE_LOW, CAVE_HIGH = 8, 24
+-- The lowest rock caves are allowed to reach, so the world floor stays sealed.
+local CAVE_FLOOR = Constants.WORLD_BOTTOM + 16
+-- Overhang warp fades in over this height above sea level, so nothing hangs over water.
+local OVERHANG_FADE = 16
+-- A roof over a cave with less solid than this (in voxels of occupancy, so
+-- about 6 studs) is opened up: thinner ones mesh as torn strips and films.
+local MIN_ROOF = 1.5
+-- Chamber regions are squashed, so they spread along tunnels more than up and down.
+local CHAMBER_SQUASH = 2
 
 local function smoothstep(edge0: number, edge1: number, x: number): number
 	local t = math.clamp((x - edge0) / (edge1 - edge0), 0, 1)
@@ -129,15 +168,36 @@ export type Column = {
 	shore: number, -- 0..1, 1 on beaches, shallows and river banks.
 	patch: number, -- Roughly -1..1 noise choosing material patches.
 	snowLine: number, -- Y above which flat ground turns to snow.
+	caves: number, -- 0..1 how freely caves may carve here; 0 near water.
+	-- Set by `prepare`, which needs the slope:
+	reach: number, -- Studs the overhang warp can move the surface up or down.
+	low: number, -- Below this Y nothing 3D happens: the column is plain heightmap.
 }
 
 export type Sampler = {
 	config: Config.Config,
 	sample: (x: number, z: number, column: Column) -> Column,
 	height: (x: number, z: number) -> number,
+	-- 3D: `prepare` a sampled column with its slope, then ask for voxel occupancy.
+	-- `occupancy` is `solidity` fed with `noise3` at the voxel centre; the chunk
+	-- builder interpolates `noise3` from a coarse grid instead.
+	prepare: (column: Column, slope: number) -> (),
+	noise3: (x: number, y: number, z: number) -> (number, number, number, number),
+	solidity: (
+		yBottom: number,
+		column: Column,
+		warp: number,
+		chamber: number,
+		tunnelA: number,
+		tunnelB: number
+	) -> number,
+	occupancy: (x: number, yBottom: number, z: number, column: Column) -> number,
+	surface: (x: number, z: number, column: Column) -> number,
 }
 
 local Sampler = {}
+
+Sampler.MIN_ROOF = MIN_ROOF
 
 function Sampler.newColumn(): Column
 	return {
@@ -148,6 +208,9 @@ function Sampler.newColumn(): Column
 		shore = 0,
 		patch = 0,
 		snowLine = 0,
+		caves = 0,
+		reach = 0,
+		low = 0,
 	}
 end
 
@@ -176,6 +239,10 @@ function Sampler.new(config: Config.Config): Sampler
 	local reliefNoise = Noise.simplex2(seed, SALT_RELIEF)
 	local shapeNoise = Noise.simplex2(seed, SALT_SHAPE)
 	local shapeAltNoise = Noise.simplex2(seed, SALT_SHAPE_ALT)
+	local chamberNoise = Noise.simplex3(seed, SALT_CHAMBER)
+	local tunnelNoiseA = Noise.simplex3(seed, SALT_TUNNEL_A)
+	local tunnelNoiseB = Noise.simplex3(seed, SALT_TUNNEL_B)
+	local overhangNoise = Noise.simplex3(seed, SALT_OVERHANG)
 
 	local invContinent = 1 / config.continentScale
 	local invDetail = 1 / config.detailScale
@@ -209,6 +276,23 @@ function Sampler.new(config: Config.Config): Sampler
 	local riverDepth = config.riverDepth
 	local riverMaxElevation = config.riverMaxElevation
 	local snowLine = config.snowLine
+	local steepSlope = config.steepSlope
+
+	local tunnelRadius = config.tunnelRadius
+	local tunnels = config.caves == "On" and tunnelRadius > 0
+	local invTunnel = 1 / config.tunnelScale
+	local tunnelStuds = config.tunnelScale / NOISE3_SLOPE
+	local chamberRadius = config.chamberRadius
+	local chambers = tunnels and chamberRadius > 0 and config.chamberAmount > 0
+	-- Tunnels start to swell where the chamber noise passes this; 0.5 is about
+	-- the top 5% of its values, 0.2 the top quarter.
+	local chamberEdge = 0.5 - 0.6 * config.chamberAmount
+	local invChamber = 1 / config.chamberScale
+	local caveDepth = config.caveDepth
+	-- Deeper than this below the surface even a full chamber has tapered shut.
+	local caveReach = caveDepth + (tunnelRadius * DEEP_TUNNEL + chamberRadius * DEEP_CHAMBER) / BAND_TAPER + VOXEL
+	local overhangStrength = if config.overhangs == "On" then config.overhangStrength else 0
+	local invOverhang = 1 / config.overhangScale
 
 	-- Terrain band edges. Each band is kept wider than the blend between them.
 	local slopeEdge = math.max(config.slopeElevation, WETLAND_TOP + 2 * TERRAIN_BLEND + 1)
@@ -449,7 +533,139 @@ function Sampler.new(config: Config.Config): Sampler
 		column.shore = math.max(coastShore, riverShore)
 		column.patch = fbm(patchNoise, x / 80, z / 80, 3) + detail * 0.2
 		column.snowLine = seaLevel + math.max(snowLine + temperature * SNOW_PER_TEMPERATURE, snowFloor) + detail * 24
+		column.caves = if tunnels
+			then (1 - smoothstep(0, 0.15, column.shore)) * smoothstep(CAVE_LOW, CAVE_HIGH, column.height - seaLevel)
+			else 0
+		column.reach = 0
+		column.low = column.height
 		return column
+	end
+
+	-- Overhangs grow on steep ground away from the shore. Mountains get half
+	-- strength even where flat: the warp only folds the ground over (overhangs,
+	-- floating bits) once it's stronger than about overhangScale / 6 studs, so
+	-- flat peaks get bumps but no floaters.
+	local function prepare(column: Column, slope: number)
+		local h = column.height
+		local steepness = smoothstep(steepSlope * 0.6, steepSlope * 1.5, slope)
+		local mountain = smoothstep(slopeEdge * 0.5, slopeEdge, h - seaLevel)
+		local reach = overhangStrength * math.max(steepness, mountain * 0.5) * (1 - column.shore)
+		column.reach = reach
+		column.low = math.min(h - reach, if column.caves > 0 then h - caveReach else h)
+	end
+
+	-- Overhang warp, chamber noise and the two tunnel noises at a point. Off
+	-- features read 0 and cost nothing.
+	local function noise3(x: number, y: number, z: number): (number, number, number, number)
+		local warp, chamber, a, b = 0, 0, 0, 0
+		if overhangStrength > 0 then
+			warp = overhangNoise(x * invOverhang, y * invOverhang * 2, z * invOverhang)
+		end
+		if tunnels then
+			a = tunnelNoiseA(x * invTunnel, y * invTunnel, z * invTunnel)
+			b = tunnelNoiseB(x * invTunnel, y * invTunnel, z * invTunnel)
+		end
+		if chambers then
+			chamber = fbm3(chamberNoise, x * invChamber, y * invChamber * CHAMBER_SQUASH, z * invChamber, 2)
+		end
+		return warp, chamber, a, b
+	end
+
+	--[[
+		Solid fraction (0..1) of the voxel spanning [yBottom, yBottom + VOXEL),
+		given the `noise3` values at its centre. Without overhangs and caves it
+		is exactly the part of the voxel under the surface, the plain heightmap.
+
+		Carving works in studs of "openness", the approximate distance into a
+		cave, so voxels at a cave wall come out partly solid and walls stay
+		smooth. Tunnels have no crust: they open at full width wherever they
+		meet the surface.
+	]]
+	local function solidity(
+		yBottom: number,
+		column: Column,
+		warp: number,
+		chamber: number,
+		tunnelA: number,
+		tunnelB: number
+	): number
+		local h = column.height
+		local y = yBottom + VOXEL / 2
+		local surface = h
+		local reach = column.reach
+		if reach > 0 and y > seaLevel then
+			surface += reach * smoothstep(seaLevel, seaLevel + OVERHANG_FADE, y) * warp
+		end
+		local solid = math.clamp((surface - yBottom) / VOXEL, 0, 1)
+
+		local caves = column.caves
+		-- The voxel holding the surface is carved too, even when its centre is
+		-- above the heightmap. Skipping it left a film of part-solid voxels
+		-- stretched over every cave mouth.
+		if solid <= 0 or caves <= 0 or y < column.low then
+			return solid
+		end
+		local depth = math.max(h - y, 0)
+		-- 0 at the surface, 1 from the bottom of the band down.
+		local deep = math.min(depth / caveDepth, 1)
+		local radius = tunnelRadius * (1 + (DEEP_TUNNEL - 1) * deep)
+		if chambers then
+			-- ponytail: a chamber is a swollen tunnel, so it's nearly always joined to
+			-- one; a rare pocket can still pinch off where the tunnel noise has a
+			-- local dip. Needs a flood fill across chunks to rule out.
+			local edge = chamberEdge - DEEP_EDGE * deep
+			local swell = smoothstep(edge, edge + 0.2, chamber) * smoothstep(CHAMBER_TOP, CHAMBER_FULL, depth)
+			radius += chamberRadius * (1 + (DEEP_CHAMBER - 1) * deep) * swell
+		end
+		local open = radius - math.sqrt(tunnelA * tunnelA + tunnelB * tunnelB) * tunnelStuds
+		-- Below the band tunnels taper shut. A part-masked column seals hard
+		-- rather than shrinking its caves.
+		open -= math.max(depth - caveDepth, 0) * BAND_TAPER + (1 - caves) * 64 + math.max(CAVE_FLOOR - y, 0) * 4
+		return math.min(solid, math.clamp(0.5 - open / VOXEL, 0, 1))
+	end
+
+	local function occupancy(x: number, yBottom: number, z: number, column: Column): number
+		if column.reach <= 0 and column.caves <= 0 then
+			return solidity(yBottom, column, 0, 0, 0, 0)
+		end
+		local warp, chamber, a, b = noise3(x, yBottom + VOXEL / 2, z)
+		return solidity(yBottom, column, warp, chamber, a, b)
+	end
+
+	--[[
+		Top of the solid ground in a sampled column: the heightmap when nothing
+		3D reaches it, otherwise the first solid voxel from above (an overhang
+		lip, or the floor of a cave mouth).
+	]]
+	local function surface(x: number, z: number, column: Column): number
+		local h = column.height
+		if column.reach <= 0 and column.caves <= 0 then
+			return h
+		end
+		local bottom = Constants.WORLD_BOTTOM
+		local yBottom = math.ceil((h + column.reach) / VOXEL) * VOXEL
+		while yBottom > bottom do
+			local solid = occupancy(x, yBottom, z, column)
+			if solid > 0 then
+				-- The chunk builder opens roofs thinner than MIN_ROOF over a cave
+				-- (see ChunkBuilder), so look past those the same way.
+				local sum, y = 0, yBottom
+				while y > bottom do
+					local s = occupancy(x, y, z, column)
+					if s <= 0 then
+						break
+					end
+					sum += s
+					y -= VOXEL
+				end
+				if column.caves <= 0 or sum >= MIN_ROOF or y + VOXEL > h or y <= bottom then
+					return yBottom + solid * VOXEL
+				end
+				yBottom = y
+			end
+			yBottom -= VOXEL
+		end
+		return h
 	end
 
 	local scratch = Sampler.newColumn()
@@ -461,6 +677,11 @@ function Sampler.new(config: Config.Config): Sampler
 		config = config,
 		sample = sample,
 		height = height,
+		prepare = prepare,
+		noise3 = noise3,
+		solidity = solidity,
+		occupancy = occupancy,
+		surface = surface,
 	}
 end
 

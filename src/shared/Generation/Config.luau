@@ -8,6 +8,7 @@
 ]]
 
 export type Mode = "Stream" | "Pregenerate"
+export type Toggle = "On" | "Off"
 
 export type Config = {
 	seed: number,
@@ -54,8 +55,20 @@ export type Config = {
 	snowLine: number,
 	steepSlope: number,
 
+	caves: Toggle,
+	tunnelRadius: number,
+	tunnelScale: number,
+	caveDepth: number,
+	chamberAmount: number,
+	chamberRadius: number,
+	chamberScale: number,
+	overhangs: Toggle,
+	overhangStrength: number,
+	overhangScale: number,
+
 	treeDensity: number,
 	oreDensity: number,
+	caveOreDensity: number,
 }
 
 export type NumberField = {
@@ -105,7 +118,7 @@ local function choice(group: string, key: string, label: string, default: string
 	return { kind = "choice", group = group, key = key, label = label, default = default, options = options }
 end
 
-local GROUPS = { "World", "Shape", "Mountains", "Coast", "Biomes", "Water", "Materials", "Assets" }
+local GROUPS = { "World", "Shape", "Mountains", "Coast", "Biomes", "Water", "Materials", "Caves", "Assets" }
 
 -- stylua: ignore
 local FIELDS: { Field } = {
@@ -153,9 +166,24 @@ local FIELDS: { Field } = {
 	number("Materials", "snowLine", "Snow line (temperate)", 290, 120, 500, 1),
 	number("Materials", "steepSlope", "Rock slope", 1.0, 0.2, 3, 0.05),
 
+	-- 3D terrain. With both switched off the world is the plain heightmap.
+	choice("Caves", "caves", "Caves", "On", { "On", "Off" }),
+	-- A character is about 5 studs tall; tunnels much under 6 studs radius get hard to walk.
+	number("Caves", "tunnelRadius", "Tunnel radius (studs)", 9, 0, 24, 0.5),
+	number("Caves", "tunnelScale", "Tunnel spacing", 240, 64, 800, 1),
+	number("Caves", "caveDepth", "Cave band depth (studs)", 96, 16, 160, 4),
+	-- Roughly the share of tunnel length that swells into chambers.
+	number("Caves", "chamberAmount", "Chamber amount", 0.3, 0, 1, 0.01),
+	number("Caves", "chamberRadius", "Chamber extra radius (studs)", 14, 0, 40, 1),
+	number("Caves", "chamberScale", "Chamber scale", 160, 48, 600, 1),
+	choice("Caves", "overhangs", "Overhangs", "On", { "On", "Off" }),
+	number("Caves", "overhangStrength", "Overhang strength (studs)", 32, 0, 64, 1),
+	number("Caves", "overhangScale", "Overhang scale", 96, 24, 400, 1),
+
 	-- Groves and clearings move trees around, so forests average about 8 per chunk at 12.
 	number("Assets", "treeDensity", "Tree density (forest)", 12, 0, 32, 0.5),
 	number("Assets", "oreDensity", "Ore nodes per chunk (mountains)", 1, 0, 4, 0.05),
+	number("Assets", "caveOreDensity", "Ore nodes per cave chunk", 4, 0, 16, 0.25),
 }
 
 local byKey: { [string]: Field } = {}

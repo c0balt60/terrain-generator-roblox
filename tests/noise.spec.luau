@@ -87,6 +87,29 @@ return function(test)
 		end
 	end)
 
+	test("simplex3 is seeded, in range and continuous", function()
+		local a, b, c = Noise.simplex3(7, 1), Noise.simplex3(7, 1), Noise.simplex3(8, 1)
+		local sum, lo, hi, differences = 0, math.huge, -math.huge, 0
+		local count = 20000
+		for i = 1, count do
+			local x, y, z = (i % 37) * 0.413 - 7, (i // 37 % 23) * -0.377, (i // 851) * 0.291 + 3
+			local v = a(x, y, z)
+			expect.equal(v, b(x, y, z), "same seed")
+			if v ~= c(x, y, z) then
+				differences += 1
+			end
+			sum += v
+			lo, hi = math.min(lo, v), math.max(hi, v)
+			-- Kernels that leak across simplex borders show up as jumps here.
+			expect.truthy(math.abs(a(x + 1e-4, y, z) - v) < 0.01, "jump")
+			expect.between(Noise.fbm3(a, x, y, z, 3), -1, 1, "fbm3")
+		end
+		expect.truthy(differences > count * 0.95, "different seeds give different noise")
+		expect.between(lo, -1.001, -0.5, "min")
+		expect.between(hi, 0.5, 1.001, "max")
+		expect.near(sum / count, 0, 0.05, "mean")
+	end)
+
 	test("erosion removes ridged detail without lowering the peaks", function()
 		local n = Noise.simplex2d(5, 2)
 		local plainMax, erodedMax = 0, 0

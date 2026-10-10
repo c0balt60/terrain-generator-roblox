@@ -59,6 +59,9 @@ actor:BindToMessageParallel("Build", function(job: Job)
 	local buildStart = os.clock()
 	local chunk = ChunkBuilder.build(current, job.cx, job.cz, palette)
 	local placements = Assets.place(current, job.cx, job.cz)
+	for _, placement in Assets.placeInCaves(current, chunk) do
+		table.insert(placements, placement)
+	end
 	local buildTime = os.clock() - buildStart
 
 	task.synchronize()
@@ -87,7 +90,16 @@ actor:BindToMessageParallel("Build", function(job: Job)
 			end
 			local model = template:Clone()
 			model:ScaleTo(placement.scale)
-			model:PivotTo(CFrame.new(placement.x, placement.y, placement.z) * CFrame.Angles(0, placement.yaw, 0))
+			-- Stand the model along its up vector. Straight up gives the identity
+			-- rotation, so surface assets just spin by yaw.
+			local up = Vector3.new(placement.nx, placement.ny, placement.nz)
+			local right = (Vector3.xAxis - up * up.X).Unit
+			if up.X > 0.99 or up.X < -0.99 then
+				right = (Vector3.zAxis - up * up.Z).Unit
+			end
+			local position = Vector3.new(placement.x, placement.y, placement.z)
+			local stand = CFrame.fromMatrix(position, right, up, right:Cross(up))
+			model:PivotTo(stand * CFrame.Angles(0, placement.yaw, 0))
 			model:SetAttribute("Kind", placement.kind)
 			model.Parent = folder
 		end
